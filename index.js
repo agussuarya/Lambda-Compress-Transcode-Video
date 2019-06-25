@@ -23,7 +23,6 @@ exports.handler = async function(event, context, callback) {
     let writeStream;
     try {
         writeStream = await fs.createWriteStream(inputFilenameTmp);
-        //await request(srcFullpath).pipe(writeStream);
 
         await new Promise((resolve, reject) => {
             let stream = request(srcFullpath)
@@ -33,9 +32,10 @@ exports.handler = async function(event, context, callback) {
                     resolve();
                 })
                 .on('error', (error) => {
-                    console.log(`Error...`);
                     reject(error);
                 });
+        }).catch(error => {
+            console.log(`Something happened: ${error}`);
         });
     } catch(err) {
         return {
@@ -87,5 +87,3 @@ exports.handler = async function(event, context, callback) {
         'mp4Filename': mp4Filename,
     };
 };
-
-
