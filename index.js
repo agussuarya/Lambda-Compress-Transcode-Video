@@ -13,6 +13,7 @@ exports.handler = async function(event, context, callback) {
     const srcRegion = event.Records[0].awsRegion;
     const srcFullpath = 'https://' + srcBucket + '.s3-' + srcRegion + '.amazonaws.com/' + srcKey;
     const dstBucket = process.env.S3_BUCKET_OUTPUT;
+    console.log(dstBucket);
     const dstKey = 'preprocessing_' + srcKey;
 
     // Create temporary input/output filenames that we can clean up afterwards.
@@ -20,48 +21,10 @@ exports.handler = async function(event, context, callback) {
     const mp4Filename = tempy.file({ extension: 'mp4' });
 
     // Download the source file.
-    await downloadSourceFile(srcFullpath, inputFilenameTmp);
-
-    // Use the Exodus ffmpeg bundled executable.
-    const ffmpeg = await path.resolve(__dirname, 'exodus', 'bin', 'ffmpeg');
-
-    // Compress & transcode video using ffmpeg.
-    const ffmpegArgs = [
-      '-i', inputFilenameTmp,
-      '-vn', // Disable the video stream in the output.
-      '-acodec', 'libmp3lame', // Use Lame for the mp3 encoding.
-      '-ac', '2', // Set 2 audio channels.
-      '-q:a', '6', // Set the quality to be roughly 128 kb/s.
-        mp4Filename,
-    ];
-    let process = await spawn(ffmpeg, ffmpegArgs);
-
-    // Upload result to s3
-    await uploadFileToS3(srcBucket, mp4Filename, process.stdout.toString());
-
-    // Return
-    return {
-        'status1': process.stdout.toString(),
-        'status2': process.stderr.toString(),
-        'mp4Filename': mp4Filename,
-    };
-};
-
-/**
- * Download the source file.
- * @param srcUrl
- * @param inputFilename
- * @returns {Promise<*>}
- */
-async function downloadSourceFile(srcUrl, inputFilename)
-{
+    let writeStream;
     try {
-        const writeStream = await fs.createWriteStream(inputFilename);
-        await request(srcUrl).pipe(writeStream);
-        return {
-            'status': true,
-            'message': 'Success download source file.'
-        };
+        writeStream = await fs.createWriteStream(inputFilenameTmp);
+        await request(srcFullpath).pipe(writeStream);
     } catch(err) {
         return {
             'status': false,
@@ -69,33 +32,46 @@ async function downloadSourceFile(srcUrl, inputFilename)
             'err': err
         };
     }
-}
 
-/**
- * Upload file to s3
- * @param bucket
- * @param key
- * @param streamData
- * @returns {Promise<*>}
- */
-async function uploadFileToS3(bucket, key, streamData) {
-    // Upload file to s3
-    let paramsDst = {
-        Bucket: bucket,
-        Key: key,
-        Body: streamData,
-    };
+    // Use the Exodus ffmpeg bundled executable.
+    const ffmpeg = await path.resolve(__dirname, 'exodus', 'bin', 'ffmpeg');
+
+    // Compress & transcode video using ffmpeg.
+    const ffmpegArgs = [
+      '-i', inputFilenameTmp,
+        mp4Filename,
+    ];
+    let processFfmpeg;
     try {
-        const resultUpload = await s3.putObject(paramsDst).promise();
-        return {
-            'status': true,
-            'message': 'Success upload to s3.'
-        };
+        processFfmpeg = await spawn(ffmpeg, ffmpegArgs);
     } catch(err) {
+        return {
+            'status': false,
+            'message': 'Failed compress & transcode video using ffmpeg.',
+            'err': err
+        };
+    }
+
+    // Upload file to s3
+    try {
+        let paramsDst = {
+            Bucket: dstBucket,
+            Key: dstKey,
+            Body: fs.createReadStream(mp4Filename),
+        };
+        const resultUpload = await s3.putObject(paramsDst).promise();
+    } catch(err) {
+        console.log(err);
         return {
             'status': false,
             'message': 'Failed upload to s3.',
             'err': err
         };
     }
-}
+
+    // Return
+    return {
+        'inputFilenameTmp': inputFilenameTmp,
+        'mp4Filename': mp4Filename,
+    };
+};
