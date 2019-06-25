@@ -13,7 +13,6 @@ exports.handler = async function(event, context, callback) {
     const srcRegion = event.Records[0].awsRegion;
     const srcFullpath = 'https://' + srcBucket + '.s3-' + srcRegion + '.amazonaws.com/' + srcKey;
     const dstBucket = process.env.S3_BUCKET_OUTPUT;
-    console.log(dstBucket);
     const dstKey = 'preprocessing_' + srcKey;
 
     // Create temporary input/output filenames that we can clean up afterwards.
@@ -24,7 +23,20 @@ exports.handler = async function(event, context, callback) {
     let writeStream;
     try {
         writeStream = await fs.createWriteStream(inputFilenameTmp);
-        await request(srcFullpath).pipe(writeStream);
+        //await request(srcFullpath).pipe(writeStream);
+
+        await new Promise((resolve, reject) => {
+            let stream = request(srcFullpath)
+                .pipe(writeStream)
+                .on('finish', () => {
+                    console.log(`The file is finished downloading.`);
+                    resolve();
+                })
+                .on('error', (error) => {
+                    console.log(`Error...`);
+                    reject(error);
+                });
+        });
     } catch(err) {
         return {
             'status': false,
@@ -57,7 +69,7 @@ exports.handler = async function(event, context, callback) {
         let paramsDst = {
             Bucket: dstBucket,
             Key: dstKey,
-            Body: fs.createReadStream(mp4Filename),
+            Body: fs.createReadStream(inputFilenameTmp),
         };
         const resultUpload = await s3.putObject(paramsDst).promise();
     } catch(err) {
@@ -75,3 +87,5 @@ exports.handler = async function(event, context, callback) {
         'mp4Filename': mp4Filename,
     };
 };
+
+
