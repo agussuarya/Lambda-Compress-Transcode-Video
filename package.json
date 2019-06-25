@@ -1,0 +1,34 @@
+{
+  "name": "lambda-compress-transcode-video",
+  "version": "1.0.0",
+  "description": "Lambda for compress & transcode video",
+  "main": "transcoder.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agussuarya/Lambda-Compress-Transcode-Video.git"
+  },
+  "keywords": [
+    "Lambda",
+    "compress",
+    "video",
+    "transcode",
+    "video"
+  ],
+  "author": "Agus Suarya",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/agussuarya/Lambda-Compress-Transcode-Video/issues"
+  },
+  "homepage": "https://github.com/agussuarya/Lambda-Compress-Transcode-Video#readme",
+  "dependencies": {
+    "aws-sdk": "^2.481.0",
+    "child_process": "^1.0.2",
+    "fs": "0.0.1-security",
+    "path": "^0.12.7",
+    "request": "^2.88.0",
+    "tempy": "^0.3.0"
+  }
+}
