@@ -1,4 +1,5 @@
 let spawn = require('child_process').spawn;
+const child_process = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const AWS = require('aws-sdk');
@@ -11,7 +12,6 @@ exports.handler = async function(event, context, callback) {
     const srcKey = decodeURIComponent(event.Records[0].s3.object.key.replace(/\+/g, " "));
     const srcBucket = event.Records[0].s3.bucket.name;
     const srcRegion = event.Records[0].awsRegion;
-    const srcFullpath = 'https://' + srcBucket + '.s3-' + srcRegion + '.amazonaws.com/' + srcKey;
     const dstBucket = process.env.S3_BUCKET_OUTPUT;
     const dstKey = 'preprocessing_' + srcKey;
 
@@ -20,19 +20,63 @@ exports.handler = async function(event, context, callback) {
     const mp4Filename = tempy.file({ extension: 'mp4' });
 
     // Download the source file.
-    await downloadImageS3(srcBucket, srcKey, inputFilenameTmp);
+    try {
+        await downloadFileFromS3(srcBucket, srcKey, inputFilenameTmp);
+    } catch (err) {
+        return {
+            'status': false,
+            'message': 'Failed download file.',
+            'err': err
+        };
+    }
+
+    // Copy file
+    try {
+        await copyFile(inputFilenameTmp, mp4Filename);
+    } catch (err) {
+        return {
+            'status': false,
+            'message': 'Failed copy file.',
+            'err': err
+        };
+    }
 
     // Use the Exodus ffmpeg bundled executable.
     const ffmpeg = await path.resolve(__dirname, 'exodus', 'bin', 'ffmpeg');
 
     // Compress & transcode video using ffmpeg.
     const ffmpegArgs = [
-      '-i', inputFilenameTmp,
+        '-y',
+        '-i', inputFilenameTmp,
+        '-vcodec', 'h264',
+        '-acodec', 'aac',
+        '-b:v', '2252800',
+        '-b:a', '163840',
         mp4Filename,
     ];
+
+    //ffmpeg -i compress_1560826543999.mp4 -y -vcodec h264 -acodec aac -b:v 2252800 -b:a 163840 result.mp4
+
     let processFfmpeg;
     try {
-        processFfmpeg = await spawn(ffmpeg, ffmpegArgs);
+        processFfmpeg = spawn(ffmpeg, ffmpegArgs);
+
+        // TES
+        processFfmpeg.stdout.on('data', (data) => {
+            console.log(`start`);
+        });
+
+        processFfmpeg.stderr.on('data', (data) => {
+            console.log(`stderr: ${data}`);
+        });
+
+        processFfmpeg.on('close', (code) => {
+            console.log(`child process exited with code ${code}`);
+        });
+        // TES
+
+        console.log('size before: ' + getFilesizeInBytes(inputFilenameTmp)/1024 + ' KB');
+        console.log('size after: ' + getFilesizeInBytes(mp4Filename)/1024 + ' KB');
     } catch(err) {
         return {
             'status': false,
@@ -46,7 +90,7 @@ exports.handler = async function(event, context, callback) {
         let paramsDst = {
             Bucket: dstBucket,
             Key: dstKey,
-            Body: fs.createReadStream(inputFilenameTmp),
+            Body: fs.createReadStream(mp4Filename),
         };
         const resultUpload = await s3.putObject(paramsDst).promise();
     } catch(err) {
@@ -65,7 +109,7 @@ exports.handler = async function(event, context, callback) {
     };
 };
 
-async function downloadImageS3 (bucket, key, toFile) {
+function downloadFileFromS3 (bucket, key, toFile) {
     return new Promise((resolve, reject) => {
         const params = { Bucket: bucket, Key: key };
         const s3Stream = s3.getObject(params).createReadStream();
@@ -74,5 +118,20 @@ async function downloadImageS3 (bucket, key, toFile) {
         fileStream.on('error', reject);
         fileStream.on('close', () => { resolve(toFile);});
         s3Stream.pipe(fileStream);
+    });
+}
+
+function getFilesizeInBytes(filename) {
+    const stats = fs.statSync(filename);
+    return stats["size"];
+}
+
+function copyFile (fileFrom, fileTo) {
+    return new Promise((resolve, reject) => {
+        fs.copyFile(fileFrom, fileTo, (err) => {
+            if (err) reject();
+            console.log('Source file was copied to destination');
+            resolve();
+        });
     });
 }
