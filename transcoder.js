@@ -1,22 +1,19 @@
-const child_process = require('child_process');
 let spawn = require('child_process').spawn;
 const fs = require('fs');
 const path = require('path');
-
 const AWS = require('aws-sdk');
 const request = require('request');
 const tempy = require('tempy');
-
 const s3 = new AWS.S3();
 
 exports.handler = async function(event, context, callback) {
     // Object key may have spaces or unicode non-ASCII characters.
-    let srcKey = decodeURIComponent(event.Records[0].s3.object.key.replace(/\+/g, " "));
-    let srcBucket = event.Records[0].s3.bucket.name;
-    let srcRegion = event.Records[0].awsRegion;
-    let srcFullpath = 'https://' + srcBucket + '.s3-' + srcRegion + '.amazonaws.com/' + srcKey;
-    let dstBucket = process.env.S3_BUCKET_OUTPUT;
-    let dstKey = 'preprocessing_' + srcKey;
+    const srcKey = decodeURIComponent(event.Records[0].s3.object.key.replace(/\+/g, " "));
+    const srcBucket = event.Records[0].s3.bucket.name;
+    const srcRegion = event.Records[0].awsRegion;
+    const srcFullpath = 'https://' + srcBucket + '.s3-' + srcRegion + '.amazonaws.com/' + srcKey;
+    const dstBucket = process.env.S3_BUCKET_OUTPUT;
+    const dstKey = 'preprocessing_' + srcKey;
 
     // Create temporary input/output filenames that we can clean up afterwards.
     const inputFilenameTmp = tempy.file();
@@ -37,9 +34,9 @@ exports.handler = async function(event, context, callback) {
       '-q:a', '6', // Set the quality to be roughly 128 kb/s.
         mp4Filename,
     ];
-
     let process = await spawn(ffmpeg, ffmpegArgs);
 
+    // Upload result to s3
     await uploadFileToS3(srcBucket, mp4Filename, process.stdout.toString());
 
     // Return
