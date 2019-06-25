@@ -20,30 +20,7 @@ exports.handler = async function(event, context, callback) {
     const mp4Filename = tempy.file({ extension: 'mp4' });
 
     // Download the source file.
-    let writeStream;
-    try {
-        writeStream = await fs.createWriteStream(inputFilenameTmp);
-
-        await new Promise((resolve, reject) => {
-            let stream = request(srcFullpath)
-                .pipe(writeStream)
-                .on('finish', () => {
-                    console.log(`The file is finished downloading.`);
-                    resolve();
-                })
-                .on('error', (error) => {
-                    reject(error);
-                });
-        }).catch(error => {
-            console.log(`Something happened: ${error}`);
-        });
-    } catch(err) {
-        return {
-            'status': false,
-            'message': 'Failed download source file.',
-            'err': err
-        };
-    }
+    await downloadImageS3(srcBucket, srcKey, inputFilenameTmp);
 
     // Use the Exodus ffmpeg bundled executable.
     const ffmpeg = await path.resolve(__dirname, 'exodus', 'bin', 'ffmpeg');
@@ -87,3 +64,15 @@ exports.handler = async function(event, context, callback) {
         'mp4Filename': mp4Filename,
     };
 };
+
+async function downloadImageS3 (bucket, key, toFile) {
+    return new Promise((resolve, reject) => {
+        const params = { Bucket: bucket, Key: key };
+        const s3Stream = s3.getObject(params).createReadStream();
+        const fileStream = fs.createWriteStream(toFile);
+        s3Stream.on('error', reject);
+        fileStream.on('error', reject);
+        fileStream.on('close', () => { resolve(toFile);});
+        s3Stream.pipe(fileStream);
+    });
+}
