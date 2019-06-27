@@ -31,15 +31,15 @@ exports.handler = async function(event, context, callback) {
     }
 
     // Copy file
-    try {
-        await copyFile(inputFilenameTmp, mp4Filename);
-    } catch (err) {
-        return {
-            'status': false,
-            'message': 'Failed copy file.',
-            'err': err
-        };
-    }
+    // try {
+    //     await copyFile(inputFilenameTmp, mp4Filename);
+    // } catch (err) {
+    //     return {
+    //         'status': false,
+    //         'message': 'Failed copy file.',
+    //         'err': err
+    //     };
+    // }
 
     // Use the Exodus ffmpeg bundled executable.
     const ffmpeg = await path.resolve(__dirname, 'exodus', 'bin', 'ffmpeg');
@@ -55,25 +55,44 @@ exports.handler = async function(event, context, callback) {
         mp4Filename,
     ];
 
-    //ffmpeg -i compress_1560826543999.mp4 -y -vcodec h264 -acodec aac -b:v 2252800 -b:a 163840 result.mp4
+    //ffmpeg -i compress_1560826543999.mp4 -y -vcodec h264 -acodec aac -b:v 2252800 -b:a 163840 compress_1560826543999_result.mp4
 
     let processFfmpeg;
     try {
-        processFfmpeg = spawn(ffmpeg, ffmpegArgs);
+        // TES 1
+        // processFfmpeg = spawn(ffmpeg, ffmpegArgs);
+        //
+        // processFfmpeg.stdout.on('data', (data) => {
+        //     console.log(`start`);
+        // });
+        //
+        // processFfmpeg.stderr.on('data', (data) => {
+        //     console.log(`stderr: ${data}`);
+        // });
+        //
+        // processFfmpeg.on('close', (code) => {
+        //     console.log(`child process exited with code ${code}`);
+        // });
+        // TES 1
 
-        // TES
-        processFfmpeg.stdout.on('data', (data) => {
-            console.log(`start`);
-        });
+        // TES 2
+        // processFfmpeg = await child_process.spawnSync(ffmpeg, ffmpegArgs);
+        // TES 2
 
-        processFfmpeg.stderr.on('data', (data) => {
-            console.log(`stderr: ${data}`);
-        });
+        // TES 3
+        //preprocessingVideo2(ffmpeg, ffmpegArgs);
+        // TES 3
 
-        processFfmpeg.on('close', (code) => {
-            console.log(`child process exited with code ${code}`);
+        // TES 4
+        //await preprocessingVideo3(ffmpeg, ffmpegArgs);
+        // TES 4
+
+        // TES 5
+        const processFfmpeg = child_process.spawnSync(ffmpeg, ffmpegArgs, {
+            stdio: 'pipe',
+            stderr: 'pipe'
         });
-        // TES
+        // TES 5
 
         console.log('size before: ' + getFilesizeInBytes(inputFilenameTmp)/1024 + ' KB');
         console.log('size after: ' + getFilesizeInBytes(mp4Filename)/1024 + ' KB');
@@ -133,5 +152,38 @@ function copyFile (fileFrom, fileTo) {
             console.log('Source file was copied to destination');
             resolve();
         });
+    });
+}
+
+function preprocessingVideo1(ffmpeg, ffmpegArgs) {
+    return new Promise((resolve, reject) => {
+        let processFfmpeg = spawn(ffmpeg, ffmpegArgs);
+        processFfmpeg.on('exit', (statusCode) => {
+            if (statusCode === 0) {
+                console.log('conversion successful');
+                resolve();
+            }
+        });
+
+        processFfmpeg
+            .stderr
+            .on('data', (err) => {
+                console.log('err:', new String(err));
+                reject()
+            });
+    });
+}
+
+function preprocessingVideo2(ffmpeg, ffmpegArgs) {
+    const processFfmpeg = spawn(ffmpeg, ffmpegArgs);
+
+    processFfmpeg.stdout.on('data', (data) => {
+        console.log(`stdOUT: ${data}`);
+    });
+    processFfmpeg.stderr.on('data', (data) => {
+        console.log(`stdERR: ${data}`);
+    });
+    processFfmpeg.on('close', (code) => {
+        console.log(`child process exited with code ${code}`);
     });
 }
