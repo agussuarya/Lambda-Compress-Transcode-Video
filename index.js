@@ -18,6 +18,19 @@ exports.handler = async function(event, context, callback) {
     const inputFilenameTmp = tempy.file();
     const mp4Filename = tempy.file({ extension: 'mp4' });
 
+    // Update row table in rds
+    try {
+        const fileName = getFilename(srcKey);
+        const id  = getMetadataIdFromFilename(fileName);
+        await updateDataTableRds1(id);
+    } catch(err) {
+        return {
+            'status': false,
+            'message': 'Failed update row table mysql 1.',
+            'error': err
+        };
+    }
+
     // Download the source file.
     try {
         await downloadFileFromS3(srcBucket, srcKey, inputFilenameTmp);
@@ -43,7 +56,7 @@ exports.handler = async function(event, context, callback) {
     // Use the Exodus ffmpeg bundled executable.
     const ffmpeg = await path.resolve(__dirname, 'exodus', 'bin', 'ffmpeg');
 
-    // Compress & transcode video using ffmpeg.
+    // Create arg for compress & transcode video using ffmpeg.
     const ffmpegArgs = [
         '-y',
         '-i', inputFilenameTmp,
@@ -55,8 +68,8 @@ exports.handler = async function(event, context, callback) {
         mp4Filename,
     ];
 
+    // Compress & transcode video using ffmpeg
     try {
-        // Compress & transcode video
         preprocessingVideo(ffmpeg, ffmpegArgs);
 
         console.log('Before compress & transcode video: ' + getFilesizeInBytes(inputFilenameTmp)/1024 + ' KB');
@@ -81,6 +94,21 @@ exports.handler = async function(event, context, callback) {
         return {
             'status': false,
             'message': 'Failed upload to s3.',
+            'error': err
+        };
+    }
+
+    // Update row table in rds
+    try {
+        const fileName = getFilename(srcKey);
+        const id  = getMetadataIdFromFilename(fileName);
+        const fullPathPreprocessingVideo = getFullPathFileS3(process.env.S3_REGION_OUTPUT, dstBucket, dstKey);
+
+        await updateDataTableRds2(id, fullPathPreprocessingVideo);
+    } catch(err) {
+        return {
+            'status': false,
+            'message': 'Failed update row table mysql 2.',
             'error': err
         };
     }
@@ -163,4 +191,110 @@ function preprocessingVideo(ffmpeg, ffmpegArgs) {
     //         console.log('Compress & transcode video successfully');
     //     }
     // });
+}
+
+/**
+ * Get full path file from s3
+ * @param region
+ * @param bucket
+ * @param key
+ * @returns {string}
+ */
+function getFullPathFileS3(region, bucket, key) {
+    return 'https://' + bucket + '.s3-' + region + '.amazonaws.com/' + key;
+}
+
+/**
+ * Relative path = sub_folder/filename.mp4 => filename.mp4
+ * @param relativePath
+ * @returns {string}
+ */
+function getFilename(relativePath) {
+    return relativePath.split('/').pop();
+}
+
+/**
+ * Custom with your logic...
+ *
+ * Example:
+ * Filename = xxx_60.mp4 => id = 60
+ *
+ * @param filename
+ */
+function getMetadataIdFromFilename(filename) {
+    // Get without extension
+    let filenames = filename.split('.');
+    filenames.pop();
+
+    // Get metadata id
+    return filenames[0].split('_').pop();
+}
+
+/**
+ * Custom with your logic...
+ *
+ * Example: we will run query sql (Update table).
+ * @param id
+ * @returns {Promise<*>}
+ */
+function updateDataTableRds1(id) {
+    const tableToUpdate = process.env.RDS_UPDATE_TABLE_NAME;
+    const additionalUpdate = process.env.RDS_UPDATE_ADDITIONAL_UPDATE_1;
+    const pkName = process.env.RDS_UPDATE_PK_NAME;
+    const querySql = "UPDATE " + tableToUpdate + " SET " + additionalUpdate + " WHERE " + pkName + "=" + id + ";";
+    let connection = mysql.createConnection({
+        host: process.env.RDS_HOST,
+        user: process.env.RDS_USER,
+        password: process.env.RDS_PASSWORD,
+        database: process.env.RDS_DATABASE,
+    });
+
+    return new Promise(function(resolve, reject) {
+        connection.query(
+            querySql,
+            function (error, results, fields) {
+                if (error) {
+                    connection.destroy();
+                    reject(error)
+                } else {
+                    connection.end(function (error) { reject(error);});
+                    resolve(results);
+                }
+            });
+    });
+}
+
+/**
+ * Custom with your logic...
+ *
+ * Example: we will run query sql (Update table).
+ * @param id
+ * @param videoUrl
+ * @returns {Promise<*>}
+ */
+function updateDataTableRds2(id, videoUrl) {
+    const tableToUpdate = process.env.RDS_UPDATE_TABLE_NAME;
+    const additionalUpdate = process.env.RDS_UPDATE_ADDITIONAL_UPDATE_2;
+    const pkName = process.env.RDS_UPDATE_PK_NAME;
+    const querySql = "UPDATE " + tableToUpdate + " SET video_url='" + videoUrl + "', " + additionalUpdate + " WHERE " + pkName + "=" + id + ";";
+    let connection = mysql.createConnection({
+        host: process.env.RDS_HOST,
+        user: process.env.RDS_USER,
+        password: process.env.RDS_PASSWORD,
+        database: process.env.RDS_DATABASE,
+    });
+
+    return new Promise(function(resolve, reject) {
+        connection.query(
+            querySql,
+            function (error, results, fields) {
+                if (error) {
+                    connection.destroy();
+                    reject(error)
+                } else {
+                    connection.end(function (error) { reject(error);});
+                    resolve(results);
+                }
+            });
+    });
 }
