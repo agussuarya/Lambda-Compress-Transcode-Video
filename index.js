@@ -11,9 +11,8 @@ exports.handler = async function(event, context, callback) {
     // Object key may have spaces or unicode non-ASCII characters.
     const srcKey = decodeURIComponent(event.Records[0].s3.object.key.replace(/\+/g, " "));
     const srcBucket = event.Records[0].s3.bucket.name;
-    const srcRegion = event.Records[0].awsRegion;
     const dstBucket = process.env.S3_BUCKET_OUTPUT;
-    const dstKey = 'preprocessing_' + srcKey;
+    const dstKey = srcKey;
 
     // Create temporary input/output filenames that we can clean up afterwards.
     const inputFilenameTmp = tempy.file();
@@ -26,7 +25,7 @@ exports.handler = async function(event, context, callback) {
         return {
             'status': false,
             'message': 'Failed download file.',
-            'err': err
+            'error': err
         };
     }
 
@@ -37,7 +36,7 @@ exports.handler = async function(event, context, callback) {
     //     return {
     //         'status': false,
     //         'message': 'Failed copy file.',
-    //         'err': err
+    //         'error': err
     //     };
     // }
 
@@ -52,55 +51,21 @@ exports.handler = async function(event, context, callback) {
         '-acodec', 'aac',
         '-b:v', '2252800',
         '-b:a', '163840',
+        '-crf', '28',
         mp4Filename,
     ];
 
-    //ffmpeg -i compress_1560826543999.mp4 -y -vcodec h264 -acodec aac -b:v 2252800 -b:a 163840 compress_1560826543999_result.mp4
-
-    let processFfmpeg;
     try {
-        // TES 1
-        // processFfmpeg = spawn(ffmpeg, ffmpegArgs);
-        //
-        // processFfmpeg.stdout.on('data', (data) => {
-        //     console.log(`start`);
-        // });
-        //
-        // processFfmpeg.stderr.on('data', (data) => {
-        //     console.log(`stderr: ${data}`);
-        // });
-        //
-        // processFfmpeg.on('close', (code) => {
-        //     console.log(`child process exited with code ${code}`);
-        // });
-        // TES 1
+        // Compress & transcode video
+        preprocessingVideo(ffmpeg, ffmpegArgs);
 
-        // TES 2
-        // processFfmpeg = await child_process.spawnSync(ffmpeg, ffmpegArgs);
-        // TES 2
-
-        // TES 3
-        //preprocessingVideo2(ffmpeg, ffmpegArgs);
-        // TES 3
-
-        // TES 4
-        //await preprocessingVideo3(ffmpeg, ffmpegArgs);
-        // TES 4
-
-        // TES 5
-        const processFfmpeg = child_process.spawnSync(ffmpeg, ffmpegArgs, {
-            stdio: 'pipe',
-            stderr: 'pipe'
-        });
-        // TES 5
-
-        console.log('size before: ' + getFilesizeInBytes(inputFilenameTmp)/1024 + ' KB');
-        console.log('size after: ' + getFilesizeInBytes(mp4Filename)/1024 + ' KB');
+        console.log('Before compress & transcode video: ' + getFilesizeInBytes(inputFilenameTmp)/1024 + ' KB');
+        console.log('After compress & transcode video: ' + getFilesizeInBytes(mp4Filename)/1024 + ' KB');
     } catch(err) {
         return {
             'status': false,
             'message': 'Failed compress & transcode video using ffmpeg.',
-            'err': err
+            'error': err
         };
     }
 
@@ -113,21 +78,27 @@ exports.handler = async function(event, context, callback) {
         };
         const resultUpload = await s3.putObject(paramsDst).promise();
     } catch(err) {
-        console.log(err);
         return {
             'status': false,
             'message': 'Failed upload to s3.',
-            'err': err
+            'error': err
         };
     }
 
     // Return
     return {
-        'inputFilenameTmp': inputFilenameTmp,
-        'mp4Filename': mp4Filename,
+        'status': true,
+        'message': 'Successfully compress & transcode video.',
     };
 };
 
+/**
+ * Download file from s3
+ * @param bucket
+ * @param key
+ * @param toFile
+ * @returns {Promise<any>}
+ */
 function downloadFileFromS3 (bucket, key, toFile) {
     return new Promise((resolve, reject) => {
         const params = { Bucket: bucket, Key: key };
@@ -140,11 +111,22 @@ function downloadFileFromS3 (bucket, key, toFile) {
     });
 }
 
+/**
+ * Get file size in byte
+ * @param filename
+ * @returns {*}
+ */
 function getFilesizeInBytes(filename) {
     const stats = fs.statSync(filename);
-    return stats["size"];
+    return Number(stats["size"]).toFixed(2);
 }
 
+/**
+ * Copy file
+ * @param fileFrom
+ * @param fileTo
+ * @returns {Promise<any>}
+ */
 function copyFile (fileFrom, fileTo) {
     return new Promise((resolve, reject) => {
         fs.copyFile(fileFrom, fileTo, (err) => {
@@ -155,35 +137,30 @@ function copyFile (fileFrom, fileTo) {
     });
 }
 
-function preprocessingVideo1(ffmpeg, ffmpegArgs) {
-    return new Promise((resolve, reject) => {
-        let processFfmpeg = spawn(ffmpeg, ffmpegArgs);
-        processFfmpeg.on('exit', (statusCode) => {
-            if (statusCode === 0) {
-                console.log('conversion successful');
-                resolve();
-            }
-        });
+/**
+ * Convert & trasncode video
+ * @param ffmpeg
+ * @param ffmpegArgs
+ */
+function preprocessingVideo(ffmpeg, ffmpegArgs) {
+    //ffmpeg -i compress_1560826543999.mp4 -y -vcodec h264 -acodec aac -b:v 2252800 -b:a 163840 compress_1560826543999_result.mp4
 
-        processFfmpeg
-            .stderr
-            .on('data', (err) => {
-                console.log('err:', new String(err));
-                reject()
-            });
+    const processFfmpeg = child_process.spawnSync(ffmpeg, ffmpegArgs, {
+        stdio: 'pipe',
+        stderr: 'pipe'
     });
-}
 
-function preprocessingVideo2(ffmpeg, ffmpegArgs) {
-    const processFfmpeg = spawn(ffmpeg, ffmpegArgs);
-
-    processFfmpeg.stdout.on('data', (data) => {
-        console.log(`stdOUT: ${data}`);
-    });
-    processFfmpeg.stderr.on('data', (data) => {
-        console.log(`stdERR: ${data}`);
-    });
-    processFfmpeg.on('close', (code) => {
-        console.log(`child process exited with code ${code}`);
-    });
+    // Error...
+    // processFfmpeg.stdout.on('data', (data) => {
+    //     console.log(`stdout: ${data}`);
+    // });
+    // processFfmpeg.stderr.on('data', (data) => {
+    //     console.log(`stderr: ${data}`);
+    // });
+    // processFfmpeg.on('close', (statusCode) => {
+    //     console.log(`Child process exited with code ${statusCode}`);
+    //     if (statusCode === 0) {
+    //         console.log('Compress & transcode video successfully');
+    //     }
+    // });
 }
