@@ -6,6 +6,7 @@ const AWS = require('aws-sdk');
 const request = require('request');
 const tempy = require('tempy');
 const s3 = new AWS.S3();
+const mysql = require('mysql');
 
 exports.handler = async function(event, context, callback) {
     // Object key may have spaces or unicode non-ASCII characters.
@@ -19,16 +20,11 @@ exports.handler = async function(event, context, callback) {
     const mp4Filename = tempy.file({ extension: 'mp4' });
 
     // Update row table in rds
-    try {
-        const fileName = getFilename(srcKey);
-        const id  = getMetadataIdFromFilename(fileName);
-        await updateDataTableRds1(id);
-    } catch(err) {
-        return {
-            'status': false,
-            'message': 'Failed update row table mysql 1.',
-            'error': err
-        };
+    const fileName1 = getFilename(srcKey);
+    const id1  = getMetadataIdFromFilename(fileName1);
+    let updateMysql1Result = await updateDataTableRds1(id1);
+    if (updateMysql1Result.status === false) {
+        return updateMysql1Result;
     }
 
     // Download the source file.
@@ -237,7 +233,7 @@ function getMetadataIdFromFilename(filename) {
  * @param id
  * @returns {Promise<*>}
  */
-function updateDataTableRds1(id) {
+async function updateDataTableRds1(id) {
     const tableToUpdate = process.env.RDS_UPDATE_TABLE_NAME;
     const additionalUpdate = process.env.RDS_UPDATE_ADDITIONAL_UPDATE_1;
     const pkName = process.env.RDS_UPDATE_PK_NAME;
@@ -249,7 +245,7 @@ function updateDataTableRds1(id) {
         database: process.env.RDS_DATABASE,
     });
 
-    return new Promise(function(resolve, reject) {
+    let promise = new Promise(function(resolve, reject) {
         connection.query(
             querySql,
             function (error, results, fields) {
@@ -262,6 +258,20 @@ function updateDataTableRds1(id) {
                 }
             });
     });
+
+    try {
+        await promise;
+        return {
+            'status': true,
+            'message': 'Success update row table mysql 1.'
+        };
+    } catch(err) {
+        return {
+            'status': false,
+            'message': 'Failed update row table mysql 1.',
+            'error': err
+        };
+    }
 }
 
 /**
