@@ -14,10 +14,12 @@ exports.handler = async function(event, context, callback) {
     const srcBucket = event.Records[0].s3.bucket.name;
     const dstBucket = process.env.S3_BUCKET_OUTPUT;
     const dstKey = srcKey;
+    const dstKeyThumb = removeExtension(srcKey) + '.png';
 
     // Create temporary input/output filenames that we can clean up afterwards.
     const inputFilenameTmp = tempy.file();
     const mp4Filename = tempy.file({ extension: 'mp4' });
+    const pngFilename = tempy.file({ extension: 'png' });
 
     // Update row table in rds
     const fileName1 = getFilename(srcKey);
@@ -53,7 +55,7 @@ exports.handler = async function(event, context, callback) {
     const ffmpeg = await path.resolve(__dirname, 'exodus', 'bin', 'ffmpeg');
 
     // Create arg for compress & transcode video using ffmpeg.
-    const ffmpegArgs = [
+    const ffmpegArgsVideo = [
         '-y',
         '-i', inputFilenameTmp,
         '-vcodec', 'h264',
@@ -64,12 +66,22 @@ exports.handler = async function(event, context, callback) {
         mp4Filename,
     ];
 
+    const ffmpegArgsThumb = [
+        '-y',
+        '-i', inputFilenameTmp,
+        '-ss', '00:00:00.000',
+        '-vframes', '1',
+        pngFilename,
+    ];
+
     // Compress & transcode video using ffmpeg
     try {
-        preprocessingVideo(ffmpeg, ffmpegArgs);
+        preprocessingVideo(ffmpeg, ffmpegArgsVideo);
 
         console.log('Before compress & transcode video: ' + getFilesizeInBytes(inputFilenameTmp)/1024 + ' KB');
         console.log('After compress & transcode video: ' + getFilesizeInBytes(mp4Filename)/1024 + ' KB');
+
+        createThumb(ffmpeg, ffmpegArgsThumb);
     } catch(err) {
         return {
             'status': false,
@@ -78,7 +90,7 @@ exports.handler = async function(event, context, callback) {
         };
     }
 
-    // Upload file to s3
+    // Upload video file to s3
     try {
         let paramsDst = {
             Bucket: dstBucket,
@@ -94,13 +106,30 @@ exports.handler = async function(event, context, callback) {
         };
     }
 
+    // Upload thumb file to s3
+    try {
+        let paramsDst = {
+            Bucket: dstBucket,
+            Key: dstKeyThumb,
+            Body: fs.createReadStream(pngFilename),
+        };
+        const resultUpload = await s3.putObject(paramsDst).promise();
+    } catch(err) {
+        return {
+            'status': false,
+            'message': 'Failed upload to s3.',
+            'error': err
+        };
+    }
+
     // Update row table in rds
     try {
         const fileName = getFilename(srcKey);
         const id  = getMetadataIdFromFilename(fileName);
         const fullPathPreprocessingVideo = getFullPathFileS3(process.env.S3_REGION_OUTPUT, dstBucket, dstKey);
+        const fullPathThumbVideo = getFullPathFileS3(process.env.S3_REGION_OUTPUT, dstBucket, dstKeyThumb);
 
-        await updateDataTableRds2(id, fullPathPreprocessingVideo);
+        await updateDataTableRds2(id, fullPathPreprocessingVideo, fullPathThumbVideo);
     } catch(err) {
         return {
             'status': false,
@@ -187,6 +216,18 @@ function preprocessingVideo(ffmpeg, ffmpegArgs) {
     //         console.log('Compress & transcode video successfully');
     //     }
     // });
+}
+
+/**
+ * Create thumb from video
+ * @param ffmpeg
+ * @param ffmpegArgs
+ */
+function createThumb(ffmpeg, ffmpegArgs) {
+    const processFfmpeg = child_process.spawnSync(ffmpeg, ffmpegArgs, {
+        stdio: 'pipe',
+        stderr: 'pipe'
+    });
 }
 
 /**
@@ -280,13 +321,18 @@ async function updateDataTableRds1(id) {
  * Example: we will run query sql (Update table).
  * @param id
  * @param videoUrl
+ * @param thumbUrl
  * @returns {Promise<*>}
  */
-function updateDataTableRds2(id, videoUrl) {
+function updateDataTableRds2(id, videoUrl, thumbUrl) {
     const tableToUpdate = process.env.RDS_UPDATE_TABLE_NAME;
     const additionalUpdate = process.env.RDS_UPDATE_ADDITIONAL_UPDATE_2;
     const pkName = process.env.RDS_UPDATE_PK_NAME;
-    const querySql = "UPDATE " + tableToUpdate + " SET video_url='" + videoUrl + "', " + additionalUpdate + " WHERE " + pkName + "=" + id + ";";
+    const querySql = "UPDATE " + tableToUpdate
+        + " SET video_url='" + videoUrl + "', "
+        + "thumb_url='" + thumbUrl + "', "
+        + additionalUpdate
+        + " WHERE " + pkName + "=" + id + ";";
     let connection = mysql.createConnection({
         host: process.env.RDS_HOST,
         user: process.env.RDS_USER,
@@ -307,4 +353,14 @@ function updateDataTableRds2(id, videoUrl) {
                 }
             });
     });
+}
+
+/**
+ * Remove extension from filename
+ * @param filename
+ * @returns {string}
+ */
+function removeExtension(filename)
+{
+    return filename.split('.').slice(0, -1).join('.')
 }
