@@ -63,7 +63,7 @@ exports.handler = async function(event, context, callback) {
         '-acodec', 'aac',
         '-b:v', '2252800',
         '-b:a', '163840',
-        '-crf', '28',
+        '-crf', '24',
         mp4Filename,
     ];
 
