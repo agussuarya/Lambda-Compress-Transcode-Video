@@ -20,6 +20,7 @@ exports.handler = async function(event, context, callback) {
     const inputFilenameTmp = tempy.file();
     const mp4Filename = tempy.file({ extension: 'mp4' });
     const pngFilename = tempy.file({ extension: 'png' });
+    const pngCompressFilename = tempy.file({ extension: 'png' });
 
     // Update row table in rds
     const fileName1 = getFilename(srcKey);
@@ -74,6 +75,13 @@ exports.handler = async function(event, context, callback) {
         pngFilename,
     ];
 
+    const ffmpegArgsThumbCompress = [
+        '-y',
+        '-i', pngFilename,
+        '-vf', 'scale=144:-1',
+        pngCompressFilename,
+    ];
+
     // Compress & transcode video using ffmpeg
     try {
         preprocessingVideo(ffmpeg, ffmpegArgsVideo);
@@ -82,6 +90,7 @@ exports.handler = async function(event, context, callback) {
         console.log('After compress & transcode video: ' + getFilesizeInBytes(mp4Filename)/1024 + ' KB');
 
         createThumb(ffmpeg, ffmpegArgsThumb);
+        resizeThumb(ffmpeg, ffmpegArgsThumbCompress);
     } catch(err) {
         return {
             'status': false,
@@ -106,12 +115,12 @@ exports.handler = async function(event, context, callback) {
         };
     }
 
-    // Upload thumb file to s3
+    // Upload compressed thumb file to s3
     try {
         let paramsDst = {
             Bucket: dstBucket,
             Key: dstKeyThumb,
-            Body: fs.createReadStream(pngFilename),
+            Body: fs.createReadStream(pngCompressFilename),
         };
         const resultUpload = await s3.putObject(paramsDst).promise();
     } catch(err) {
@@ -224,6 +233,18 @@ function preprocessingVideo(ffmpeg, ffmpegArgs) {
  * @param ffmpegArgs
  */
 function createThumb(ffmpeg, ffmpegArgs) {
+    const processFfmpeg = child_process.spawnSync(ffmpeg, ffmpegArgs, {
+        stdio: 'pipe',
+        stderr: 'pipe'
+    });
+}
+
+/**
+ * Resize thumb from image
+ * @param ffmpeg
+ * @param ffmpegArgs
+ */
+function resizeThumb(ffmpeg, ffmpegArgs) {
     const processFfmpeg = child_process.spawnSync(ffmpeg, ffmpegArgs, {
         stdio: 'pipe',
         stderr: 'pipe'
