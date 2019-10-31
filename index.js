@@ -7,6 +7,7 @@ const request = require('request');
 const tempy = require('tempy');
 const s3 = new AWS.S3();
 const mysql = require('mysql');
+const axios = require('axios').default;
 
 exports.handler = async function(event, context, callback) {
     // Object key may have spaces or unicode non-ASCII characters.
@@ -146,6 +147,8 @@ exports.handler = async function(event, context, callback) {
             'error': err
         };
     }
+
+    await callApi(id);
 
     // Return
     return {
@@ -384,4 +387,14 @@ function updateDataTableRds2(id, videoUrl, thumbUrl) {
 function removeExtension(filename)
 {
     return filename.split('.').slice(0, -1).join('.')
+}
+
+async function callApi(id)
+{
+    try {
+        const response = await axios.post(process.env.API_URL_1 + '/' + id + '/' + process.env.API_URL_2);
+        // console.log(response);
+    } catch (error) {
+        // console.error(error);
+    }
 }
