@@ -140,6 +140,9 @@ exports.handler = async function(event, context, callback) {
         const fullPathThumbVideo = getFullPathFileS3(process.env.S3_REGION_OUTPUT, dstBucket, dstKeyThumb);
 
         await updateDataTableRds2(id, fullPathPreprocessingVideo, fullPathThumbVideo);
+
+        // Call api
+        await callApi(id);
     } catch(err) {
         return {
             'status': false,
@@ -147,8 +150,6 @@ exports.handler = async function(event, context, callback) {
             'error': err
         };
     }
-
-    await callApi(id);
 
     // Return
     return {
