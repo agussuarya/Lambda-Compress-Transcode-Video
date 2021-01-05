@@ -25,7 +25,7 @@
   "homepage": "https://github.com/agussuarya/Lambda-Compress-Transcode-Video#readme",
   "dependencies": {
     "aws-sdk": "^2.481.0",
-    "axios": "^0.19.0",
+    "axios": "^0.21.1",
     "child_process": "^1.0.2",
     "dotenv": "^8.0.0",
     "fs": "0.0.1-security",
